@@ -1,36 +1,118 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shipment Ops Dashboard
 
-## Getting Started
+Painel de acompanhamento de remessas, em Next.js 14 (App Router) com Supabase.
 
-First, run the development server:
+## Requisitos
+
+- Node.js 22 ou superior (o script de seed usa o type stripping nativo para `.ts`)
+- Uma conta e um projeto no [Supabase](https://supabase.com)
+
+Docker não é necessário: o banco é remoto e o Supabase local não é usado.
+
+## Configuração
+
+Copie o exemplo de variáveis de ambiente e preencha com os dados do seu projeto:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Variável | Onde encontrar |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Dashboard do Supabase → Project Settings → API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Mesma tela, a chave publishable/anon |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+A `anon key` pode ir para o browser: ela é limitada por Row Level Security. A
+`service_role` **nunca** deve entrar em `.env.example` nem em qualquer variável
+`NEXT_PUBLIC_`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`.env.local` é ignorado pelo Git.
 
-## Learn More
+## Desenvolvimento
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+A aplicação sobe em http://localhost:3000. Sem sessão, `/dashboard` redireciona
+para `/login`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Banco de dados
 
-## Deploy on Vercel
+O schema vive em `supabase/migrations`. Para aplicar num projeto remoto:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npx supabase login
+npx supabase link --project-ref <project-ref>
+npx supabase db push
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Para regerar os tipos depois de mudar o schema:
+
+```bash
+npx supabase gen types typescript --linked > src/lib/database.types.ts
+```
+
+## Seed
+
+`supabase/seed.ts` insere 30 remessas fictícias com rotas, transportadoras e
+códigos de rastreio plausíveis, distribuídas entre os quatro status (10 em
+trânsito, 11 entregues, 6 pendentes, 3 atrasadas).
+
+O `user_id` nunca é fixo no código. Há duas formas de indicar o dono das
+remessas.
+
+### Opção 1 — autenticando com um usuário (recomendada)
+
+As linhas são inseridas pelo próprio usuário, respeitando o RLS. Não exige
+nenhuma chave privilegiada. Acrescente ao `.env.local`:
+
+```
+SEED_EMAIL=voce@exemplo.com
+SEED_PASSWORD=sua-senha
+```
+
+O usuário precisa já existir — crie a conta em `/signup` antes. Então:
+
+```bash
+npm run seed
+```
+
+### Opção 2 — com a service role key
+
+Insere em nome de qualquer usuário, ignorando o RLS. Use apenas localmente, e
+nunca comite a chave:
+
+```
+SUPABASE_SERVICE_ROLE_KEY=...
+SEED_USER_ID=<uuid do usuário>
+```
+
+```bash
+npm run seed
+```
+
+O id também pode vir por argumento, sem passar pelo arquivo:
+
+```bash
+npm run seed -- --user-id <uuid>
+```
+
+### Rodando de novo
+
+Os códigos de rastreio são únicos por usuário, então uma segunda execução falha
+com violação de unicidade. Para recomeçar do zero, apagando as remessas
+daquele usuário antes de inserir:
+
+```bash
+npm run seed -- --reset
+```
+
+## Verificação
+
+```bash
+npx tsc --noEmit      # tipos
+npm run lint          # ESLint
+npm run build         # build de produção
+```

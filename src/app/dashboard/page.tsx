@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { signOut } from "@/app/auth/actions";
-import { ShipmentFiltersBar } from "@/components/shipment-filters";
-import { ShipmentsList } from "@/components/shipments-list";
+import { ShipmentsDashboard } from "@/components/shipments-dashboard";
+import type { Database } from "@/lib/database.types";
+import { METRIC_STATUSES, type ShipmentCounts } from "@/lib/metrics";
 import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -12,12 +14,46 @@ import {
   parseFilters,
   STATUS_ALL,
   type SearchParams,
+  type ShipmentFilters,
 } from "@/lib/validation/filters";
-import type { Shipment } from "@/lib/validation/shipment";
+import type { Shipment, ShipmentStatus } from "@/lib/validation/shipment";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
+
+type Client = SupabaseClient<Database>;
+
+/**
+ * Counts under the active filters, so a card never reports a wider set than the
+ * table below it. head: true asks Postgres for the number only, with no rows on
+ * the wire.
+ */
+async function countShipments(
+  supabase: Client,
+  filters: ShipmentFilters,
+  status?: ShipmentStatus,
+): Promise<number> {
+  let query = supabase
+    .from("shipments")
+    .select("*", { count: "exact", head: true });
+
+  if (filters.status !== STATUS_ALL) {
+    query = query.eq("status", filters.status);
+  }
+  if (status !== undefined) {
+    query = query.eq("status", status);
+  }
+  if (filters.query !== "") {
+    query = query.or(buildSearchOrFilter(filters.query));
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    throw new Error(`Não foi possível calcular as métricas: ${error.message}`);
+  }
+  return count ?? 0;
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -40,27 +76,41 @@ export default async function DashboardPage({
 
   // Filtering happens here, in the query, not on the client: the browser only
   // ever receives the rows for the current view.
-  let query = supabase
+  let listQuery = supabase
     .from("shipments")
     .select("*")
     .order("created_at", { ascending: false });
 
   if (filters.status !== STATUS_ALL) {
-    query = query.eq("status", filters.status);
+    listQuery = listQuery.eq("status", filters.status);
   }
   if (filters.query !== "") {
-    query = query.or(buildSearchOrFilter(filters.query));
+    listQuery = listQuery.or(buildSearchOrFilter(filters.query));
   }
 
-  const { data, error } = await query;
+  const [listResult, total, ...statusCounts] = await Promise.all([
+    listQuery,
+    countShipments(supabase, filters),
+    ...METRIC_STATUSES.map((status) =>
+      countShipments(supabase, filters, status),
+    ),
+  ]);
 
   // Thrown so the nearest error boundary renders, instead of showing an empty
   // table that would read as "you have no shipments".
-  if (error) {
-    throw new Error(`Não foi possível carregar as remessas: ${error.message}`);
+  if (listResult.error) {
+    throw new Error(
+      `Não foi possível carregar as remessas: ${listResult.error.message}`,
+    );
   }
 
-  const shipments: Shipment[] = data ?? [];
+  const shipments: Shipment[] = listResult.data ?? [];
+  const counts: ShipmentCounts = {
+    total,
+    in_transit: statusCounts[0] ?? 0,
+    delivered: statusCounts[1] ?? 0,
+    delayed: statusCounts[2] ?? 0,
+  };
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-12">
@@ -89,10 +139,9 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      <ShipmentFiltersBar filters={filters} />
-
-      <ShipmentsList
+      <ShipmentsDashboard
         initialShipments={shipments}
+        initialCounts={counts}
         userId={user.id}
         filters={filters}
       />

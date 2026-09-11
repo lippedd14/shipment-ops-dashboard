@@ -1,3 +1,5 @@
+import { MetricCardsSkeleton } from "@/components/shipment-metrics";
+
 /** Skeleton shown while the dashboard's data is fetched on the server. */
 export default function DashboardLoading() {
   return (
@@ -9,6 +11,8 @@ export default function DashboardLoading() {
         </div>
         <div className="h-9 w-40 animate-pulse rounded bg-black/10 dark:bg-white/10" />
       </div>
+
+      <MetricCardsSkeleton />
 
       <div
         role="status"
