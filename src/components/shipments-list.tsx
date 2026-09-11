@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
@@ -10,6 +10,11 @@ import type {
 
 import { DeleteShipmentButton } from "@/components/delete-shipment-button";
 import { createClient } from "@/lib/supabase/client";
+import {
+  hasActiveFilters,
+  matchesFilters,
+  type ShipmentFilters,
+} from "@/lib/validation/filters";
 import { STATUS_LABELS, type Shipment } from "@/lib/validation/shipment";
 
 const RECONNECT_BASE_MS = 1_000;
@@ -45,7 +50,19 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
-function EmptyState() {
+/** "Nothing matched" and "nothing exists yet" call for different next steps. */
+function EmptyState({ filtered }: { filtered: boolean }) {
+  if (filtered) {
+    return (
+      <div className="rounded-lg border border-dashed border-black/15 px-6 py-12 text-center dark:border-white/20">
+        <p className="text-sm font-medium">Nenhuma remessa encontrada.</p>
+        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          Nenhuma remessa corresponde aos filtros aplicados.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-dashed border-black/15 px-6 py-12 text-center dark:border-white/20">
       <p className="text-sm font-medium">Nenhuma remessa ainda.</p>
@@ -88,13 +105,22 @@ function ConnectionBadge({ state }: { state: ConnectionState }) {
 export function ShipmentsList({
   initialShipments,
   userId,
+  filters,
 }: {
   initialShipments: Shipment[];
   userId: string;
+  filters: ShipmentFilters;
 }) {
   const router = useRouter();
   const [shipments, setShipments] = useState<Shipment[]>(initialShipments);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+
+  // Read through a ref so changing a filter does not tear down the channel:
+  // the subscription is per user, the filtering is per event.
+  const filtersRef = useRef(filters);
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // One client for the lifetime of the component. createClient() builds a new
   // instance per call, which would churn a socket on every render.
@@ -110,7 +136,14 @@ export function ShipmentsList({
     (payload: RealtimePostgresChangesPayload<Shipment>) => {
       setShipments((current) => {
         if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-          return upsert(current, payload.new);
+          const row = payload.new;
+          // The server query is filtered, so the stream has to be too. An
+          // update can also move a row out of the current view, which means
+          // dropping a row we are already showing.
+          if (!matchesFilters(row, filtersRef.current)) {
+            return current.filter((existing) => existing.id !== row.id);
+          }
+          return upsert(current, row);
         }
         // DELETE carries the previous row; replica identity full puts id in it.
         const removedId = payload.old.id;
@@ -238,7 +271,7 @@ export function ShipmentsList({
       </div>
 
       {shipments.length === 0 ? (
-        <EmptyState />
+        <EmptyState filtered={hasActiveFilters(filters)} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
           <table className="w-full min-w-[820px] border-collapse text-sm">

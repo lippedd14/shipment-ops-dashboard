@@ -3,16 +3,28 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/auth/actions";
+import { ShipmentFiltersBar } from "@/components/shipment-filters";
 import { ShipmentsList } from "@/components/shipments-list";
 import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import {
+  buildSearchOrFilter,
+  parseFilters,
+  STATUS_ALL,
+  type SearchParams,
+} from "@/lib/validation/filters";
 import type { Shipment } from "@/lib/validation/shipment";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const filters = parseFilters(searchParams);
   const supabase = createClient();
   const auth = await checkUser(supabase);
 
@@ -26,12 +38,21 @@ export default async function DashboardPage() {
   }
   const user = auth.user;
 
-  // The initial read stays on the server; the client only applies realtime
-  // events on top of what arrives as a prop.
-  const { data, error } = await supabase
+  // Filtering happens here, in the query, not on the client: the browser only
+  // ever receives the rows for the current view.
+  let query = supabase
     .from("shipments")
     .select("*")
     .order("created_at", { ascending: false });
+
+  if (filters.status !== STATUS_ALL) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters.query !== "") {
+    query = query.or(buildSearchOrFilter(filters.query));
+  }
+
+  const { data, error } = await query;
 
   // Thrown so the nearest error boundary renders, instead of showing an empty
   // table that would read as "you have no shipments".
@@ -68,7 +89,13 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <ShipmentsList initialShipments={shipments} userId={user.id} />
+      <ShipmentFiltersBar filters={filters} />
+
+      <ShipmentsList
+        initialShipments={shipments}
+        userId={user.id}
+        filters={filters}
+      />
     </main>
   );
 }
