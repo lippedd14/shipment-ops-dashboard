@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Database } from "@/lib/database.types";
+import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
   collectShipmentFieldErrors,
@@ -41,16 +44,25 @@ function duplicateTrackingCode(
   };
 }
 
-async function requireUserId(): Promise<string> {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+/**
+ * Owner of the mutation, from the verified session.
+ *
+ * When the auth server is unreachable the caller gets a retryable message
+ * instead of being redirected to /login: the session may well still be valid,
+ * and bouncing the user out would lose whatever they had typed.
+ */
+async function resolveUserId(
+  supabase: SupabaseClient<Database>,
+): Promise<{ userId: string } | { unavailable: true }> {
+  const auth = await checkUser(supabase);
 
-  if (!user) {
+  if (auth.status === "unauthenticated") {
     redirect("/login");
   }
-  return user.id;
+  if (auth.status === "unavailable") {
+    return { unavailable: true };
+  }
+  return { userId: auth.user.id };
 }
 
 export async function createShipment(
@@ -62,13 +74,16 @@ export async function createShipment(
     return { fieldErrors: collectShipmentFieldErrors(parsed.error) };
   }
 
-  // The owner comes from the verified session, never from the submitted form.
-  const userId = await requireUserId();
   const supabase = createClient();
+  const owner = await resolveUserId(supabase);
+  if ("unavailable" in owner) {
+    return { formError: AUTH_UNAVAILABLE_MESSAGE };
+  }
 
+  // The owner comes from the verified session, never from the submitted form.
   const { error } = await supabase
     .from("shipments")
-    .insert({ ...parsed.data, user_id: userId });
+    .insert({ ...parsed.data, user_id: owner.userId });
 
   if (error) {
     return duplicateTrackingCode(error) ?? { formError: error.message };
@@ -88,8 +103,11 @@ export async function updateShipment(
     return { fieldErrors: collectShipmentFieldErrors(parsed.error) };
   }
 
-  const userId = await requireUserId();
   const supabase = createClient();
+  const owner = await resolveUserId(supabase);
+  if ("unavailable" in owner) {
+    return { formError: AUTH_UNAVAILABLE_MESSAGE };
+  }
 
   // The user_id filter is redundant with RLS, but makes the intent explicit and
   // lets us tell "not yours" apart from "does not exist" via the empty result.
@@ -97,7 +115,7 @@ export async function updateShipment(
     .from("shipments")
     .update(parsed.data)
     .eq("id", id)
-    .eq("user_id", userId)
+    .eq("user_id", owner.userId)
     .select("id")
     .single();
 
@@ -131,14 +149,17 @@ export async function deleteShipment(
     return { error: "Remessa inválida." };
   }
 
-  const userId = await requireUserId();
   const supabase = createClient();
+  const owner = await resolveUserId(supabase);
+  if ("unavailable" in owner) {
+    return { error: AUTH_UNAVAILABLE_MESSAGE };
+  }
 
   const { error } = await supabase
     .from("shipments")
     .delete()
     .eq("id", id)
-    .eq("user_id", userId);
+    .eq("user_id", owner.userId);
 
   if (error) {
     return { error: error.message };

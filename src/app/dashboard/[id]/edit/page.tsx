@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { updateShipment } from "@/app/dashboard/actions";
 import { ShipmentForm } from "@/components/shipment-form";
+import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -16,12 +17,15 @@ export default async function EditShipmentPage({
   params: { id: string };
 }) {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const auth = await checkUser(supabase);
 
-  if (!user) {
+  if (auth.status === "unauthenticated") {
     redirect("/login");
+  }
+  // Surfaced by the error boundary, which offers a retry. Redirecting to /login
+  // here would claim the session ended when it only could not be verified.
+  if (auth.status === "unavailable") {
+    throw new Error(AUTH_UNAVAILABLE_MESSAGE);
   }
 
   // maybeSingle keeps "not found" and "not yours" indistinguishable: RLS filters

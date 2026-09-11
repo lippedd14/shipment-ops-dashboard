@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { checkUser } from "@/lib/supabase/auth";
 import type { Database } from "@/lib/database.types";
 
 /** Routes that require an authenticated user. */
@@ -46,13 +47,20 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // getUser() revalidates the token with Supabase. Do not replace it with
+  // checkUser() revalidates the token with Supabase. Do not swap it for
   // getSession(), which trusts the cookie without verifying it.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const auth = await checkUser(supabase);
 
   const { pathname } = request.nextUrl;
+
+  // Could not reach the auth server: leave the request alone rather than
+  // signing the user out over a network blip. The page still resolves the user
+  // itself, and RLS keeps the data protected either way.
+  if (auth.status === "unavailable") {
+    return supabaseResponse;
+  }
+
+  const user = auth.status === "authenticated" ? auth.user : null;
 
   if (!user && matches(pathname, PROTECTED_PREFIXES)) {
     const url = request.nextUrl.clone();
