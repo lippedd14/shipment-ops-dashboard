@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function DashboardError({
   error,
@@ -10,9 +11,24 @@ export default function DashboardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [retried, setRetried] = useState(false);
+
   useEffect(() => {
     console.error(error);
   }, [error]);
+
+  // reset() only clears the boundary and re-renders the cached segment, which
+  // still holds the failed result. router.refresh() is what refetches the
+  // Server Components, so the retry needs both.
+  const retry = () => {
+    setRetried(true);
+    startTransition(() => {
+      router.refresh();
+      reset();
+    });
+  };
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-4 px-6 py-12">
@@ -23,13 +39,20 @@ export default function DashboardError({
       >
         {error.message}
       </p>
+      {retried && !isPending ? (
+        <p className="text-sm text-black/60 dark:text-white/60">
+          Ainda sem resposta do servidor. Verifique a conexão e tente de novo.
+        </p>
+      ) : null}
+
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={reset}
-          className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+          onClick={retry}
+          disabled={isPending}
+          className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          Tentar de novo
+          {isPending ? "Tentando..." : "Tentar de novo"}
         </button>
         <Link
           href="/dashboard"
