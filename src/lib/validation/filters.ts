@@ -1,22 +1,34 @@
 import {
-  SHIPMENT_STATUSES,
+  isStage,
+  stageOf,
   type Shipment,
-  type ShipmentStatus,
+  type Stage,
 } from "@/lib/validation/shipment";
 
-export const STATUS_ALL = "all";
-export type StatusFilter = ShipmentStatus | typeof STATUS_ALL;
+export const STAGE_ALL = "all";
+export type StageFilter = Stage | typeof STAGE_ALL;
 
-export const PARAM_STATUS = "status";
+export const PARAM_STAGE = "stage";
 export const PARAM_QUERY = "q";
+export const PARAM_DELAYED = "delayed";
+export const PARAM_VIEW = "view";
+
+export const VIEWS = ["board", "table"] as const;
+export type View = (typeof VIEWS)[number];
+export const DEFAULT_VIEW: View = "board";
 
 export type ShipmentFilters = {
-  status: StatusFilter;
+  stage: StageFilter;
   /** Trimmed search term; empty means "no search". */
   query: string;
+  delayedOnly: boolean;
 };
 
-export const NO_FILTERS: ShipmentFilters = { status: STATUS_ALL, query: "" };
+export const NO_FILTERS: ShipmentFilters = {
+  stage: STAGE_ALL,
+  query: "",
+  delayedOnly: false,
+};
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -27,36 +39,57 @@ function first(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-function isStatus(value: string): value is ShipmentStatus {
-  return (SHIPMENT_STATUSES as readonly string[]).includes(value);
-}
-
 /** Unknown or malformed params fall back to "no filter" rather than erroring. */
 export function parseFilters(searchParams: SearchParams): ShipmentFilters {
-  const status = first(searchParams[PARAM_STATUS]);
-  const query = first(searchParams[PARAM_QUERY]).trim();
-
+  const stage = first(searchParams[PARAM_STAGE]);
   return {
-    status: isStatus(status) ? status : STATUS_ALL,
-    query,
+    stage: isStage(stage) ? stage : STAGE_ALL,
+    query: first(searchParams[PARAM_QUERY]).trim(),
+    delayedOnly: first(searchParams[PARAM_DELAYED]) === "1",
   };
 }
 
-export function hasActiveFilters(filters: ShipmentFilters): boolean {
-  return filters.status !== STATUS_ALL || filters.query !== "";
+export function parseView(searchParams: SearchParams): View {
+  const view = first(searchParams[PARAM_VIEW]);
+  return (VIEWS as readonly string[]).includes(view)
+    ? (view as View)
+    : DEFAULT_VIEW;
 }
 
-/** Only non-default values reach the URL, so a clean list has a clean address. */
-export function buildSearchParams(filters: ShipmentFilters): string {
+export function hasActiveFilters(filters: ShipmentFilters): boolean {
+  return (
+    filters.stage !== STAGE_ALL || filters.query !== "" || filters.delayedOnly
+  );
+}
+
+/** Only non-default values reach the URL, so a clean board has a clean address. */
+export function buildSearchParams(
+  filters: ShipmentFilters,
+  view: View,
+): string {
   const params = new URLSearchParams();
-  if (filters.status !== STATUS_ALL) {
-    params.set(PARAM_STATUS, filters.status);
+  if (filters.stage !== STAGE_ALL) {
+    params.set(PARAM_STAGE, filters.stage);
   }
   if (filters.query !== "") {
     params.set(PARAM_QUERY, filters.query);
   }
+  if (filters.delayedOnly) {
+    params.set(PARAM_DELAYED, "1");
+  }
+  if (view !== DEFAULT_VIEW) {
+    params.set(PARAM_VIEW, view);
+  }
   return params.toString();
 }
+
+/** Columns the free-text search covers. The realtime predicate uses the same list. */
+export const SEARCH_FIELDS = [
+  "tracking_code",
+  "origin",
+  "destination",
+  "carrier",
+] as const;
 
 /**
  * Escapes the LIKE metacharacters so a term is matched literally.
@@ -67,14 +100,6 @@ export function buildSearchParams(filters: ShipmentFilters): string {
 export function escapeLikeTerm(term: string): string {
   return term.replace(/[\\%_]/g, (match) => `\\${match}`).replace(/\*/g, "");
 }
-
-/** Columns the free-text search covers. The realtime predicate uses the same list. */
-export const SEARCH_FIELDS = [
-  "tracking_code",
-  "origin",
-  "destination",
-  "carrier",
-] as const;
 
 /**
  * Builds the PostgREST `or=(...)` filter matching the term against every
@@ -100,7 +125,10 @@ export function matchesFilters(
   shipment: Shipment,
   filters: ShipmentFilters,
 ): boolean {
-  if (filters.status !== STATUS_ALL && shipment.status !== filters.status) {
+  if (filters.stage !== STAGE_ALL && stageOf(shipment) !== filters.stage) {
+    return false;
+  }
+  if (filters.delayedOnly && !shipment.is_delayed) {
     return false;
   }
   if (filters.query === "") {

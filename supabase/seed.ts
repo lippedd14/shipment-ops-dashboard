@@ -13,7 +13,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // Type-only, so Node's type stripping erases it and the extension is moot.
 import type { Database } from "../src/lib/database.types";
 
-type ShipmentStatus = Database["public"]["Enums"]["shipment_status"];
+type Stage = "pending" | "in_transit" | "delivered";
 type ShipmentInsert = Database["public"]["Tables"]["shipments"]["Insert"];
 
 type SeedRow = {
@@ -21,7 +21,9 @@ type SeedRow = {
   origin: string;
   destination: string;
   carrier: string;
-  status: ShipmentStatus;
+  status: Stage;
+  /** Exception flag, independent of the stage. */
+  delayed?: boolean;
   /** How long ago the shipment was created, used to spread the list out. */
   daysAgo: number;
 };
@@ -63,10 +65,10 @@ const SEED_ROWS: SeedRow[] = [
   { tracking_code: "PB472910410BR", origin: "Salvador, BA", destination: "Aracaju, SE", carrier: "TNT Mercúrio", status: "pending", daysAgo: 0 },
   { tracking_code: "PB472910411BR", origin: "Porto Alegre, RS", destination: "Rio Grande, RS", carrier: "Binotto Logística", status: "pending", daysAgo: 2 },
 
-  // Atrasadas
-  { tracking_code: "PB472910412BR", origin: "Manaus, AM", destination: "São Paulo, SP", carrier: "Rodonaves Transportes", status: "delayed", daysAgo: 12 },
-  { tracking_code: "PB472910413BR", origin: "Belém, PA", destination: "Suape, PE", carrier: "Atlas Transportes", status: "delayed", daysAgo: 9 },
-  { tracking_code: "PB472910414BR", origin: "Cuiabá, MT", destination: "Paranaguá, PR", carrier: "Rápido 900 Transportes", status: "delayed", daysAgo: 14 },
+  // Atrasadas: em trânsito, sinalizadas pela flag
+  { tracking_code: "PB472910412BR", origin: "Manaus, AM", destination: "São Paulo, SP", carrier: "Rodonaves Transportes", status: "in_transit", delayed: true, daysAgo: 12 },
+  { tracking_code: "PB472910413BR", origin: "Belém, PA", destination: "Suape, PE", carrier: "Atlas Transportes", status: "in_transit", delayed: true, daysAgo: 9 },
+  { tracking_code: "PB472910414BR", origin: "Cuiabá, MT", destination: "Paranaguá, PR", carrier: "Rápido 900 Transportes", status: "in_transit", delayed: true, daysAgo: 14 },
 ];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -167,7 +169,7 @@ async function main() {
     const createdAt = new Date(now - row.daysAgo * DAY_MS);
     // Delivered and delayed shipments have moved since they were created.
     const touched =
-      row.status === "delivered" || row.status === "delayed"
+      row.status === "delivered" || row.delayed === true
         ? new Date(createdAt.getTime() + DAY_MS)
         : createdAt;
 
@@ -178,6 +180,7 @@ async function main() {
       destination: row.destination,
       carrier: row.carrier,
       status: row.status,
+      is_delayed: row.delayed ?? false,
       created_at: createdAt.toISOString(),
       updated_at: touched.toISOString(),
     };
@@ -197,7 +200,8 @@ async function main() {
   }
 
   const byStatus = SEED_ROWS.reduce<Record<string, number>>((acc, row) => {
-    acc[row.status] = (acc[row.status] ?? 0) + 1;
+    const key = row.delayed ? row.status + " (atrasada)" : row.status;
+    acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
 

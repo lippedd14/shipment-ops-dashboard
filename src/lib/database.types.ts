@@ -45,6 +45,7 @@ export type Database = {
           created_at: string
           destination: string
           id: string
+          is_delayed: boolean
           origin: string
           status: Database["public"]["Enums"]["shipment_status"]
           tracking_code: string
@@ -56,6 +57,7 @@ export type Database = {
           created_at?: string
           destination: string
           id?: string
+          is_delayed?: boolean
           origin: string
           status?: Database["public"]["Enums"]["shipment_status"]
           tracking_code: string
@@ -67,6 +69,7 @@ export type Database = {
           created_at?: string
           destination?: string
           id?: string
+          is_delayed?: boolean
           origin?: string
           status?: Database["public"]["Enums"]["shipment_status"]
           tracking_code?: string

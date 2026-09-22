@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { ShipmentFormState } from "@/app/dashboard/actions";
+import { BTN_PRIMARY, INPUT, LABEL } from "@/components/ui";
 import {
-  SHIPMENT_STATUSES,
-  STATUS_LABELS,
+  STAGES,
+  STAGE_LABELS,
   type ShipmentInput,
 } from "@/lib/validation/shipment";
 
@@ -31,9 +32,6 @@ const TEXT_FIELDS = [
   { name: "carrier", label: "Transportadora" },
 ] as const satisfies readonly { name: keyof ShipmentInput; label: string }[];
 
-const inputClass =
-  "rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50";
-
 function SubmitButton({
   label,
   pendingLabel,
@@ -44,11 +42,7 @@ function SubmitButton({
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-    >
+    <button type="submit" disabled={pending} className={BTN_PRIMARY}>
       {pending ? pendingLabel : label}
     </button>
   );
@@ -68,7 +62,7 @@ export function ShipmentForm({
         const error = state.fieldErrors?.[name];
         return (
           <div key={name} className="flex flex-col gap-1.5">
-            <label htmlFor={name} className="text-sm font-medium">
+            <label htmlFor={name} className={LABEL}>
               {label}
             </label>
             <input
@@ -78,13 +72,10 @@ export function ShipmentForm({
               defaultValue={defaultValues?.[name] ?? ""}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? `${name}-error` : undefined}
-              className={inputClass}
+              className={INPUT}
             />
             {error ? (
-              <p
-                id={`${name}-error`}
-                className="text-sm text-red-600 dark:text-red-400"
-              >
+              <p id={`${name}-error`} className="text-meta text-delayed">
                 {error}
               </p>
             ) : null}
@@ -93,8 +84,8 @@ export function ShipmentForm({
       })}
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="status" className="text-sm font-medium">
-          Status
+        <label htmlFor="status" className={LABEL}>
+          Etapa
         </label>
         <select
           id="status"
@@ -104,36 +95,43 @@ export function ShipmentForm({
           aria-describedby={
             state.fieldErrors?.status ? "status-error" : undefined
           }
-          className={inputClass}
+          className={INPUT}
         >
-          {SHIPMENT_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {STATUS_LABELS[status]}
+          {STAGES.map((stage) => (
+            <option key={stage} value={stage}>
+              {STAGE_LABELS[stage]}
             </option>
           ))}
         </select>
         {state.fieldErrors?.status ? (
-          <p id="status-error" className="text-sm text-red-600 dark:text-red-400">
+          <p id="status-error" className="text-meta text-delayed">
             {state.fieldErrors.status}
           </p>
         ) : null}
       </div>
 
+      <label className="flex items-center gap-2 text-body text-ink">
+        <input
+          type="checkbox"
+          name="is_delayed"
+          defaultChecked={defaultValues?.is_delayed ?? false}
+          className="size-4 accent-[color:var(--signal)]"
+        />
+        Marcar como atrasada
+      </label>
+
       {state.formError ? (
         <p
           role="alert"
-          className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+          className="rounded-md border border-line bg-surface px-3 py-2 text-body text-delayed"
         >
           {state.formError}
         </p>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         <SubmitButton label={submitLabel} pendingLabel={pendingLabel} />
-        <Link
-          href="/dashboard"
-          className="text-sm text-black/60 underline underline-offset-4 dark:text-white/60"
-        >
+        <Link href="/dashboard" className="text-body text-muted hover:underline">
           Cancelar
         </Link>
       </div>

@@ -9,6 +9,7 @@ import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
   collectShipmentFieldErrors,
+  isStage,
   readShipmentForm,
   type ShipmentFieldErrors,
 } from "@/lib/validation/shipment";
@@ -39,7 +40,7 @@ function duplicateTrackingCode(
   return {
     fieldErrors: {
       tracking_code:
-        "Você já tem uma remessa com esse código de rastreio. Use outro código.",
+        "Você já tem uma remessa com esse código. Escolha outro.",
     },
   };
 }
@@ -138,12 +139,44 @@ export async function updateShipment(
   redirect("/dashboard");
 }
 
-export type DeleteState = { error?: string };
+export type RowActionState = { error?: string };
+
+/** Advances (or returns) a card to another stage from the board. */
+export async function moveShipmentStage(
+  _prevState: RowActionState,
+  formData: FormData,
+): Promise<RowActionState> {
+  const id = String(formData.get("id") ?? "");
+  const stage = String(formData.get("stage") ?? "");
+
+  if (!id || !isStage(stage)) {
+    return { error: "Não foi possível mover a remessa." };
+  }
+
+  const supabase = createClient();
+  const owner = await resolveUserId(supabase);
+  if ("unavailable" in owner) {
+    return { error: AUTH_UNAVAILABLE_MESSAGE };
+  }
+
+  const { error } = await supabase
+    .from("shipments")
+    .update({ status: stage })
+    .eq("id", id)
+    .eq("user_id", owner.userId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/dashboard");
+  return {};
+}
 
 export async function deleteShipment(
-  _prevState: DeleteState,
+  _prevState: RowActionState,
   formData: FormData,
-): Promise<DeleteState> {
+): Promise<RowActionState> {
   const id = String(formData.get("id") ?? "");
   if (!id) {
     return { error: "Remessa inválida." };

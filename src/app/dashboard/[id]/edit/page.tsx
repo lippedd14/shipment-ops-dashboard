@@ -6,6 +6,7 @@ import { updateShipment } from "@/app/dashboard/actions";
 import { ShipmentForm } from "@/components/shipment-form";
 import { AUTH_UNAVAILABLE_MESSAGE, checkUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { stageOf } from "@/lib/validation/shipment";
 
 export const metadata: Metadata = {
   title: "Editar remessa",
@@ -68,7 +69,8 @@ export default async function EditShipmentPage({
           origin: shipment.origin,
           destination: shipment.destination,
           carrier: shipment.carrier,
-          status: shipment.status,
+          status: stageOf(shipment),
+          is_delayed: shipment.is_delayed,
         }}
       />
     </main>

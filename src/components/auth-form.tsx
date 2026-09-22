@@ -5,11 +5,9 @@ import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { AuthState } from "@/app/auth/actions";
+import { BTN_PRIMARY, INPUT, LABEL } from "@/components/ui";
 
-type AuthAction = (
-  state: AuthState,
-  formData: FormData,
-) => Promise<AuthState>;
+type AuthAction = (state: AuthState, formData: FormData) => Promise<AuthState>;
 
 type AuthFormProps = {
   action: AuthAction;
@@ -35,7 +33,7 @@ function SubmitButton({
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+      className={`${BTN_PRIMARY} w-full py-2`}
     >
       {pending ? pendingLabel : label}
     </button>
@@ -54,11 +52,11 @@ export function AuthForm({
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-6 px-6 py-12">
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      <h1 className="text-title font-semibold text-ink">{title}</h1>
 
       <form action={formAction} className="flex flex-col gap-4" noValidate>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-sm font-medium">
+          <label htmlFor="email" className={LABEL}>
             E-mail
           </label>
           <input
@@ -71,17 +69,17 @@ export function AuthForm({
             aria-describedby={
               state.fieldErrors?.email ? "email-error" : undefined
             }
-            className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+            className={INPUT}
           />
           {state.fieldErrors?.email ? (
-            <p id="email-error" className="text-sm text-red-600 dark:text-red-400">
+            <p id="email-error" className="text-meta text-delayed">
               {state.fieldErrors.email}
             </p>
           ) : null}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="text-sm font-medium">
+          <label htmlFor="password" className={LABEL}>
             Senha
           </label>
           <input
@@ -94,13 +92,10 @@ export function AuthForm({
             aria-describedby={
               state.fieldErrors?.password ? "password-error" : undefined
             }
-            className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+            className={INPUT}
           />
           {state.fieldErrors?.password ? (
-            <p
-              id="password-error"
-              className="text-sm text-red-600 dark:text-red-400"
-            >
+            <p id="password-error" className="text-meta text-delayed">
               {state.fieldErrors.password}
             </p>
           ) : null}
@@ -109,7 +104,7 @@ export function AuthForm({
         {state.formError ? (
           <p
             role="alert"
-            className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+            className="rounded-md border border-line bg-surface px-3 py-2 text-body text-delayed"
           >
             {state.formError}
           </p>
@@ -118,7 +113,7 @@ export function AuthForm({
         {state.notice ? (
           <p
             role="status"
-            className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300"
+            className="rounded-md border border-line bg-surface px-3 py-2 text-body text-ink"
           >
             {state.notice}
           </p>
@@ -127,9 +122,9 @@ export function AuthForm({
         <SubmitButton label={submitLabel} pendingLabel={pendingLabel} />
       </form>
 
-      <p className="text-sm text-black/60 dark:text-white/60">
+      <p className="text-body text-muted">
         {footer.prompt}{" "}
-        <Link href={footer.href} className="underline underline-offset-4">
+        <Link href={footer.href} className="font-medium text-signal hover:underline">
           {footer.linkLabel}
         </Link>
       </p>

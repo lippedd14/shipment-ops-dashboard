@@ -2,26 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light is the designed mode; dark mirrors it. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #14171a;
+  --muted: #5b6773;
+  --line: #e3e7eb;
+  --signal: #1b4dff;
+
+  --stage-pending: #8b93a1;
+  --stage-in-transit: #1b4dff;
+  --stage-delivered: #0e8a5f;
+  --delayed: #c2410c;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #0f1215;
+    --surface: #171b1f;
+    --ink: #eceff2;
+    --muted: #9aa5b1;
+    --line: #2a3036;
+    --signal: #5b82ff;
+
+    /* Lifted so each still clears AA against the dark surface. */
+    --stage-pending: #a3abb8;
+    --stage-in-transit: #5b82ff;
+    --stage-delivered: #2aa579;
+    --delayed: #e2703a;
   }
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-archivo), system-ui, -apple-system, sans-serif;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Data columns only line up when the digits share a width. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Row actions stay hidden until hover, but a touch device has no hover to
+   reveal them with, and keyboard focus must never land on something unseen. */
+[data-row-actions] {
+  opacity: 0;
+}
+
+tr:hover [data-row-actions],
+tr:focus-within [data-row-actions] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  [data-row-actions] {
+    opacity: 1;
+  }
+}
+
+/* The live indicator is the one element allowed to move. */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+.live-pulse {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* Brief flash marking what just arrived or changed over realtime. */
+@keyframes row-flash {
+  from {
+    background-color: color-mix(in srgb, var(--signal) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.row-flash {
+  animation: row-flash 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

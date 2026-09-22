@@ -8,16 +8,20 @@ import {
   useState,
   useTransition,
 } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type {
   RealtimeChannel,
   RealtimePostgresChangesPayload,
 } from "@supabase/supabase-js";
 
+import { signOut } from "@/app/auth/actions";
+import { ShipmentBoard } from "@/components/shipment-board";
 import { ShipmentFiltersBar } from "@/components/shipment-filters";
 import { MetricCards } from "@/components/shipment-metrics";
-import { ShipmentsList } from "@/components/shipments-list";
-import { applyCountDelta, type ShipmentCounts } from "@/lib/metrics";
+import { ShipmentsTable } from "@/components/shipments-list";
+import { BTN_PRIMARY, BTN_QUIET } from "@/components/ui";
+import { applyRowDelta, type ShipmentCounts } from "@/lib/metrics";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildSearchParams,
@@ -25,13 +29,15 @@ import {
   matchesFilters,
   NO_FILTERS,
   type ShipmentFilters,
-  type StatusFilter,
+  type StageFilter,
+  type View,
 } from "@/lib/validation/filters";
 import type { Shipment } from "@/lib/validation/shipment";
 
 const DEBOUNCE_MS = 300;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+const FLASH_MS = 240;
 
 type ConnectionState = "connecting" | "live" | "reconnecting";
 
@@ -66,30 +72,71 @@ function isCompleteRow(row: Partial<Shipment>): row is Shipment {
     typeof row.tracking_code === "string" &&
     typeof row.origin === "string" &&
     typeof row.destination === "string" &&
-    typeof row.carrier === "string"
+    typeof row.carrier === "string" &&
+    typeof row.is_delayed === "boolean"
   );
 }
 
-const CONNECTION_LABELS: Record<
-  ConnectionState,
-  { label: string; dot: string }
-> = {
-  connecting: { label: "Conectando...", dot: "bg-black/30 dark:bg-white/30" },
-  live: { label: "Ao vivo", dot: "bg-green-500" },
-  reconnecting: { label: "Reconectando...", dot: "bg-amber-500" },
-};
-
 function ConnectionBadge({ state }: { state: ConnectionState }) {
-  const { label, dot } = CONNECTION_LABELS[state];
+  if (state === "live") {
+    return (
+      <span className="inline-flex items-center gap-2 text-meta text-muted">
+        <span className="live-pulse size-2 rounded-full bg-signal" aria-hidden />
+        Ao vivo
+      </span>
+    );
+  }
+  if (state === "reconnecting") {
+    return (
+      <span className="inline-flex items-center gap-2 text-meta text-muted">
+        <span className="size-2 rounded-full bg-delayed" aria-hidden />
+        Reconectando…
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2 text-meta text-muted">
+      <span className="size-2 rounded-full bg-line" aria-hidden />
+      Conectando…
+    </span>
+  );
+}
+
+function EmptyState({
+  filtered,
+  onClear,
+}: {
+  filtered: boolean;
+  onClear: () => void;
+}) {
+  if (filtered) {
+    return (
+      <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center">
+        <p className="text-body font-medium text-ink">
+          Nada encontrado com esses filtros.
+        </p>
+        <p className="mt-1 text-body text-muted">
+          Ajuste a busca ou volte a ver todas as remessas.
+        </p>
+        <button type="button" onClick={onClear} className={`${BTN_QUIET} mt-4`}>
+          Limpar filtros
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <span
-      role="status"
-      className="inline-flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60"
-    >
-      <span className={`size-2 rounded-full ${dot}`} aria-hidden />
-      {label}
-    </span>
+    <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center">
+      <p className="text-body font-medium text-ink">
+        Cadastre sua primeira remessa.
+      </p>
+      <p className="mt-1 text-body text-muted">
+        Ela aparece aqui e passa a ser acompanhada ao vivo.
+      </p>
+      <Link href="/dashboard/new" className={`${BTN_PRIMARY} mt-4`}>
+        Cadastrar remessa
+      </Link>
+    </div>
   );
 }
 
@@ -97,12 +144,16 @@ export function ShipmentsDashboard({
   initialShipments,
   initialCounts,
   userId,
+  userEmail,
   filters,
+  view,
 }: {
   initialShipments: Shipment[];
   initialCounts: ShipmentCounts;
   userId: string;
+  userEmail: string;
   filters: ShipmentFilters;
+  view: View;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -112,6 +163,7 @@ export function ShipmentsDashboard({
   const [counts, setCounts] = useState<ShipmentCounts>(initialCounts);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [term, setTerm] = useState(filters.query);
+  const [flashedIds, setFlashedIds] = useState<ReadonlySet<string>>(new Set());
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -119,30 +171,55 @@ export function ShipmentsDashboard({
   // channel is per user, the filtering and counting are per event.
   const filtersRef = useRef(filters);
   const shipmentsRef = useRef(shipments);
+  const viewRef = useRef(view);
   const pushedQuery = useRef(filters.query);
+  const flashTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
-
   useEffect(() => {
     shipmentsRef.current = shipments;
   }, [shipments]);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   // Server data wins whenever the Server Component re-renders: a mutation's
   // revalidatePath, a filter change, or the resync after a reconnect.
   useEffect(() => {
     setShipments(initialShipments);
   }, [initialShipments]);
-
   useEffect(() => {
     setCounts(initialCounts);
   }, [initialCounts]);
 
+  useEffect(() => {
+    const timers = flashTimers.current;
+    return () => {
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
+
+  /** Marks a row as just-changed so it can flash once, briefly. */
+  const flash = useCallback((id: string) => {
+    setFlashedIds((current) => new Set(current).add(id));
+    const timer = setTimeout(() => {
+      flashTimers.current.delete(timer);
+      setFlashedIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }, FLASH_MS);
+    flashTimers.current.add(timer);
+  }, []);
+
   const push = useCallback(
-    (next: ShipmentFilters) => {
+    (next: ShipmentFilters, nextView: View) => {
       pushedQuery.current = next.query;
-      const search = buildSearchParams(next);
+      const search = buildSearchParams(next, nextView);
       startTransition(() => {
         // replace, not push: typing should not bury the previous page in history.
         router.replace(search ? `${pathname}?${search}` : pathname, {
@@ -167,23 +244,43 @@ export function ShipmentsDashboard({
       return;
     }
     const timer = setTimeout(() => {
-      push({ ...filtersRef.current, query: term.trim() });
+      push({ ...filtersRef.current, query: term.trim() }, viewRef.current);
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
   }, [term, push]);
 
-  const onStatusChange = useCallback(
-    (status: StatusFilter) => {
-      push({ ...filtersRef.current, status, query: term.trim() });
+  const onStageChange = useCallback(
+    (stage: StageFilter) => {
+      push(
+        { ...filtersRef.current, stage, query: term.trim() },
+        viewRef.current,
+      );
+    },
+    [push, term],
+  );
+
+  const onDelayedChange = useCallback(
+    (delayedOnly: boolean) => {
+      push(
+        { ...filtersRef.current, delayedOnly, query: term.trim() },
+        viewRef.current,
+      );
     },
     [push, term],
   );
 
   const onClear = useCallback(() => {
     setTerm("");
-    push(NO_FILTERS);
+    push(NO_FILTERS, viewRef.current);
   }, [push]);
+
+  const onViewChange = useCallback(
+    (nextView: View) => {
+      push({ ...filtersRef.current, query: term.trim() }, nextView);
+    },
+    [push, term],
+  );
 
   const handleChange = useCallback(
     (payload: RealtimePostgresChangesPayload<Shipment>) => {
@@ -195,7 +292,8 @@ export function ShipmentsDashboard({
           return;
         }
         setShipments((current) => upsert(current, row));
-        setCounts((current) => applyCountDelta(current, row.status, 1));
+        setCounts((current) => applyRowDelta(current, row, 1));
+        flash(row.id);
         return;
       }
 
@@ -219,20 +317,20 @@ export function ShipmentsDashboard({
 
         setCounts((current) => {
           if (wasVisible && !isVisible) {
-            return applyCountDelta(current, previous?.status ?? row.status, -1);
+            return applyRowDelta(current, previous ?? row, -1);
           }
           if (!wasVisible && isVisible) {
-            return applyCountDelta(current, row.status, 1);
+            return applyRowDelta(current, row, 1);
           }
-          if (wasVisible && isVisible && previous && previous.status !== row.status) {
-            return applyCountDelta(
-              applyCountDelta(current, previous.status, -1),
-              row.status,
-              1,
-            );
+          if (wasVisible && isVisible && previous) {
+            return applyRowDelta(applyRowDelta(current, previous, -1), row, 1);
           }
           return current;
         });
+
+        if (isVisible) {
+          flash(row.id);
+        }
         return;
       }
 
@@ -246,11 +344,11 @@ export function ShipmentsDashboard({
         : shipmentsRef.current.find((item) => item.id === removedId);
 
       if (previous && matchesFilters(previous, active)) {
-        setCounts((current) => applyCountDelta(current, previous.status, -1));
+        setCounts((current) => applyRowDelta(current, previous, -1));
       }
       setShipments((current) => current.filter((item) => item.id !== removedId));
     },
-    [],
+    [flash],
   );
 
   useEffect(() => {
@@ -365,24 +463,74 @@ export function ShipmentsDashboard({
 
   return (
     <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h1 className="text-title font-semibold text-ink">Remessas</h1>
+          <p className="text-meta text-muted">{userEmail}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <ConnectionBadge state={connection} />
+
+          <div
+            role="group"
+            aria-label="Modo de visualização"
+            className="flex overflow-hidden rounded-md border border-line"
+          >
+            {(
+              [
+                ["board", "Quadro"],
+                ["table", "Tabela"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={view === value}
+                onClick={() => onViewChange(value)}
+                className={`px-3 py-1.5 text-body font-medium ${
+                  view === value
+                    ? "bg-signal text-white"
+                    : "bg-surface text-muted hover:text-ink"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <Link href="/dashboard/new" className={BTN_PRIMARY}>
+            Nova remessa
+          </Link>
+          <form action={signOut}>
+            <button type="submit" className={BTN_QUIET}>
+              Sair
+            </button>
+          </form>
+        </div>
+      </header>
+
       <MetricCards counts={counts} pending={isPending} />
 
       <ShipmentFiltersBar
         term={term}
-        status={filters.status}
+        stage={filters.stage}
+        delayedOnly={filters.delayedOnly}
         active={active}
         pending={isPending}
         onTermChange={setTerm}
-        onStatusChange={onStatusChange}
+        onStageChange={onStageChange}
+        onDelayedChange={onDelayedChange}
         onClear={onClear}
       />
 
-      <div className="flex flex-col gap-3">
-        <div className="flex justify-end">
-          <ConnectionBadge state={connection} />
-        </div>
-        <ShipmentsList shipments={shipments} filtered={active} />
-      </div>
+      {shipments.length === 0 ? (
+        <EmptyState filtered={active} onClear={onClear} />
+      ) : view === "board" ? (
+        <ShipmentBoard shipments={shipments} flashedIds={flashedIds} />
+      ) : (
+        <ShipmentsTable shipments={shipments} flashedIds={flashedIds} />
+      )}
     </div>
   );
 }

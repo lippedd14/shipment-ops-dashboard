@@ -3,20 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 
-import { deleteShipment, type DeleteState } from "@/app/dashboard/actions";
+import { deleteShipment, type RowActionState } from "@/app/dashboard/actions";
+import { BTN_DANGER, BTN_SMALL } from "@/components/ui";
 
-const initialState: DeleteState = {};
+const initialState: RowActionState = {};
 
 function ConfirmButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-    >
-      {pending ? "Excluindo..." : "Confirmar"}
+    <button type="submit" disabled={pending} className={BTN_DANGER}>
+      {pending ? "Excluindo…" : "Excluir"}
     </button>
   );
 }
@@ -45,12 +42,12 @@ export function DeleteShipmentButton({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="rounded-md border border-black/15 px-2 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          className={BTN_SMALL}
         >
           Excluir
         </button>
         {state.error ? (
-          <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+          <p role="alert" className="text-meta text-delayed">
             {state.error}
           </p>
         ) : null}
@@ -61,22 +58,22 @@ export function DeleteShipmentButton({
   return (
     <form action={formAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="id" value={id} />
-      <p className="text-xs text-black/70 dark:text-white/70">
-        Excluir <span className="font-medium">{trackingCode}</span>?
+      <p className="text-meta text-muted">
+        Excluir <span className="font-medium text-ink">{trackingCode}</span>?
       </p>
       <div className="flex gap-2">
         <button
           ref={cancelRef}
           type="button"
           onClick={() => setConfirming(false)}
-          className="rounded-md border border-black/15 px-2 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          className={BTN_SMALL}
         >
-          Cancelar
+          Manter
         </button>
         <ConfirmButton />
       </div>
       {state.error ? (
-        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="text-meta text-delayed">
           {state.error}
         </p>
       ) : null}

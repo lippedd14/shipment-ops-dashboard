@@ -4,6 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { BTN_PRIMARY } from "@/components/ui";
+
 export default function DashboardError({
   error,
   reset,
@@ -31,34 +33,34 @@ export default function DashboardError({
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-4 px-6 py-12">
-      <h1 className="text-2xl font-semibold">Algo deu errado</h1>
-      <p
-        role="alert"
-        className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
-      >
+    <main className="mx-auto flex w-full max-w-lg flex-col gap-4 px-6 py-16">
+      <h1 className="text-title font-semibold text-ink">
+        Não foi possível carregar
+      </h1>
+      <p role="alert" className="text-body text-delayed">
         {error.message}
       </p>
+
       {retried && !isPending ? (
-        <p className="text-sm text-black/60 dark:text-white/60">
-          Ainda sem resposta do servidor. Verifique a conexão e tente de novo.
+        <p className="text-body text-muted">
+          O servidor ainda não respondeu. Verifique a conexão.
         </p>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={retry}
           disabled={isPending}
-          className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={BTN_PRIMARY}
         >
-          {isPending ? "Tentando..." : "Tentar de novo"}
+          {isPending ? "Tentando…" : "Tentar de novo"}
         </button>
         <Link
           href="/dashboard"
-          className="text-sm text-black/60 underline underline-offset-4 dark:text-white/60"
+          className="text-body text-muted hover:underline"
         >
-          Voltar ao dashboard
+          Voltar às remessas
         </Link>
       </div>
     </main>

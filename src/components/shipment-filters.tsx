@@ -1,45 +1,38 @@
 "use client";
 
-import { STATUS_ALL, type StatusFilter } from "@/lib/validation/filters";
-import { SHIPMENT_STATUSES, STATUS_LABELS } from "@/lib/validation/shipment";
-
-const controlClass =
-  "rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50";
+import { STAGE_ALL, type StageFilter } from "@/lib/validation/filters";
+import { STAGES, STAGE_LABELS, isStage } from "@/lib/validation/shipment";
+import { INPUT, LABEL } from "@/components/ui";
 
 /**
  * Presentational: the dashboard island owns the term, the debounce and the URL,
- * so the metric cards and the table share one pending state with these inputs.
+ * so the cards, the board and these inputs share one pending state.
  */
 export function ShipmentFiltersBar({
   term,
-  status,
+  stage,
+  delayedOnly,
   active,
   pending,
   onTermChange,
-  onStatusChange,
+  onStageChange,
+  onDelayedChange,
   onClear,
 }: {
   term: string;
-  status: StatusFilter;
+  stage: StageFilter;
+  delayedOnly: boolean;
   active: boolean;
   pending: boolean;
   onTermChange: (value: string) => void;
-  onStatusChange: (value: StatusFilter) => void;
+  onStageChange: (value: StageFilter) => void;
+  onDelayedChange: (value: boolean) => void;
   onClear: () => void;
 }) {
-  const handleStatus = (value: string) => {
-    const next: StatusFilter =
-      value === STATUS_ALL ||
-      (SHIPMENT_STATUSES as readonly string[]).includes(value)
-        ? (value as StatusFilter)
-        : STATUS_ALL;
-    onStatusChange(next);
-  };
-
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
-        <label htmlFor="shipment-search" className="text-sm font-medium">
+      <div className="flex min-w-[240px] flex-1 flex-col gap-1.5">
+        <label htmlFor="shipment-search" className={LABEL}>
           Buscar
         </label>
         <input
@@ -47,46 +40,59 @@ export function ShipmentFiltersBar({
           type="search"
           value={term}
           onChange={(event) => onTermChange(event.target.value)}
-          placeholder="Buscar por código, origem, destino ou transportadora"
-          className={controlClass}
+          placeholder="Código, origem, destino ou transportadora"
+          className={INPUT}
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="shipment-status" className="text-sm font-medium">
-          Status
+        <label htmlFor="shipment-stage" className={LABEL}>
+          Etapa
         </label>
         <select
-          id="shipment-status"
-          value={status}
-          onChange={(event) => handleStatus(event.target.value)}
-          className={controlClass}
+          id="shipment-stage"
+          value={stage}
+          onChange={(event) => {
+            const value = event.target.value;
+            onStageChange(isStage(value) ? value : STAGE_ALL);
+          }}
+          className={`${INPUT} w-auto`}
         >
-          <option value={STATUS_ALL}>Todos</option>
-          {SHIPMENT_STATUSES.map((value) => (
+          <option value={STAGE_ALL}>Todas</option>
+          {STAGES.map((value) => (
             <option key={value} value={value}>
-              {STATUS_LABELS[value]}
+              {STAGE_LABELS[value]}
             </option>
           ))}
         </select>
       </div>
 
+      <label className="flex items-center gap-2 py-2 text-body text-ink">
+        <input
+          type="checkbox"
+          checked={delayedOnly}
+          onChange={(event) => onDelayedChange(event.target.checked)}
+          className="size-4 accent-[color:var(--signal)]"
+        />
+        Só atrasadas
+      </label>
+
       {active ? (
         <button
           type="button"
           onClick={onClear}
-          className="rounded-md border border-black/15 px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          className="py-2 text-body font-medium text-signal hover:underline"
         >
-          Limpar filtros
+          Limpar
         </button>
       ) : null}
 
       <span
         role="status"
         aria-live="polite"
-        className="py-2 text-xs text-black/50 dark:text-white/50"
+        className="py-2 text-meta text-muted"
       >
-        {pending ? "Filtrando..." : ""}
+        {pending ? "Atualizando…" : ""}
       </span>
     </div>
   );
